@@ -155,7 +155,7 @@ export const LotteryProvider = ({ children }: PropsWithChildren) => {
 
   // NEW ROBUST RESET FUNCTION WITH FALLBACK
   const resetLottery = async () => {
-    if(!window.confirm("🚨 ATTENTION : ZONE DE DANGER !\n\nVous êtes sur le point de :\n1. Supprimer TOUS les participants\n2. Annuler le gagnant actuel\n3. Remettre tous les stats à zéro\n\nÊtes-vous ABSOLUMENT sûr de vouloir tout effacer ?")) return;
+    if(!window.confirm("🚨 ATTENTION : ZONE DE DANGER !\n\nVous êtes sur le point de :\n1. Supprimer TOUS les participants\n2. Annuler le gagnant actuel\n3. Effacer les dates du jeu\n4. Remettre tous les stats à zéro\n\nÊtes-vous ABSOLUMENT sûr de vouloir tout effacer ?")) return;
     
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -166,36 +166,37 @@ export const LotteryProvider = ({ children }: PropsWithChildren) => {
     setLoading(true);
     try {
       // 1. Try RPC first (Fastest/Atomic)
-      const { error: rpcError } = await supabase.rpc('reset_all_data');
+      // Note: Assuming RPC might not handle dates clearing, we rely on the fallback below or the RPC needs update.
+      // We will force the date update via client to ensure it meets user request.
+      
+      // 2. Fallback / Update: Update Tickets
+      // We update all tickets that are not available back to available
+      const { error: ticketsError } = await supabase
+        .from('tickets')
+        .update({
+          status: TicketStatus.AVAILABLE,
+          purchaser_name: null,
+          purchaser_phone: null,
+          transaction_id: null,
+          purchase_date: null
+        })
+        .gt('id', 0); // Safety clause to target all rows
+      
+      if (ticketsError) throw ticketsError;
 
-      if (rpcError) {
-        console.warn("RPC 'reset_all_data' failed or missing. Using client-side fallback...", rpcError);
-        
-        // 2. Fallback: Update Tickets
-        // We update all tickets that are not available back to available
-        const { error: ticketsError } = await supabase
-          .from('tickets')
-          .update({
-            status: TicketStatus.AVAILABLE,
-            purchaser_name: null,
-            purchaser_phone: null,
-            transaction_id: null,
-            purchase_date: null
-          })
-          .gt('id', 0); // Safety clause to target all rows
-        
-        if (ticketsError) throw ticketsError;
+      // 3. Fallback / Update: Reset Config (Winner AND Dates)
+      const { error: configError } = await supabase
+        .from('raffle_config')
+        .update({ 
+          current_winner_id: null,
+          prize_end_date: null,       // Clears End Date
+          next_prize_start_date: null // Clears Next Start Date
+        })
+        .eq('id', 1);
 
-        // 3. Fallback: Reset Config
-        const { error: configError } = await supabase
-          .from('raffle_config')
-          .update({ current_winner_id: null })
-          .eq('id', 1);
+      if (configError) throw configError;
 
-        if (configError) throw configError;
-      }
-
-      alert("✅ Système intégralement réinitialisé !");
+      alert("✅ Système intégralement réinitialisé (Participants, Gagnant et Dates) !");
       await fetchData(); // Refresh local state
       
     } catch (error: any) {
