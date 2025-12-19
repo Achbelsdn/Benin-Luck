@@ -1,65 +1,59 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Ticket } from "../types"; 
 
-// --- 1. CONFIGURATION ---
 const API_KEY = import.meta.env.VITE_API_KEY;
 const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
 
-// Liste de tous les modèles à tester, du plus récent au plus vieux
-// Si le premier échoue, il tente le suivant automatiquement.
+// LISTE DES MODÈLES (Ordre de priorité)
+// On commence par le 2.0 Experimental (c'est souvent le nom réel du 2.0 Flash)
 const MODELS_TO_TRY = [
-  "gemini-2.0-flash",        // Ton choix (Beta)
-  "gemini-2.0-flash-exp",    // Variante expérimentale souvent requise
-  "gemini-1.5-flash",        // Le standard rapide
-  "gemini-1.5-flash-latest", // Variante
-  "gemini-pro"               // Le classique (marche toujours)
+  "gemini-2.0-flash-exp",    // Nom technique correct pour la Beta
+  "gemini-2.0-flash",        // Nom alternatif
+  "gemini-1.5-flash",        // Le plus stable (si le 2.0 plante)
+  "gemini-1.5-pro"           // Le plus puissant
 ];
 
-const CONTEXTE = `
-INSTRUCTION : Tu es l'assistant de "Bénin Luck".
-Créateur : Achbel SODJINOU.
-Règle : Ticket à 100 FCFA.
-Ton : Sympa, court.
+const CONTEXTE_BENIN_LUCK = `
+SYSTEM: Tu es l'IA de Bénin Luck.
+CRÉATEUR: Achbel SODJINOU.
+RÈGLE: Ticket 100 FCFA.
+TON: Court, fun et serviable.
 `;
 
 export const getChatResponse = async (message: string): Promise<string> => {
-  if (!API_KEY) return "❌ Erreur : Clé API manquante.";
+  if (!API_KEY) return "❌ ERREUR : Clé API 'VITE_API_KEY' manquante.";
 
-  // On boucle sur la liste des modèles jusqu'à ce qu'un fonctionne
+  // Boucle de test des modèles
   for (const modelName of MODELS_TO_TRY) {
     try {
       console.log(`Tentative avec le modèle : ${modelName}...`);
       
       const model = genAI!.getGenerativeModel({ model: modelName });
-      const prompt = CONTEXTE + "\nQuestion: " + message;
+      // On colle le contexte au début du message (plus robuste que systemInstruction)
+      const prompt = `${CONTEXTE_BENIN_LUCK}\nUser: ${message}`;
       
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      
-      // Si on arrive ici, c'est que ça a marché !
       return response.text();
 
     } catch (error: any) {
-      console.warn(`Échec avec ${modelName} :`, error.message);
-      
-      // Si c'est le dernier modèle et qu'il a échoué aussi...
-      if (modelName === MODELS_TO_TRY[MODELS_TO_TRY.length - 1]) {
-        // Analyse spécifique de l'erreur "Failed to fetch"
-        if (error.message.includes("Failed to fetch")) {
-            return "⚠️ Erreur de connexion (Failed to fetch). Désactivez votre bloqueur de pub (AdBlock) ou vérifiez votre connexion internet.";
-        }
-        return `❌ Tous les modèles ont échoué. Erreur : ${error.message}`;
+      console.warn(`Échec ${modelName} :`, error.message);
+
+      // Si c'est une erreur de réseau (AdBlock ou coupure net)
+      if (error.message.includes("Failed to fetch")) {
+        return "⚠️ ERREUR RÉSEAU : Votre navigateur ou un AdBlocker bloque la connexion à Google. Désactivez vos extensions et réessayez.";
       }
-      // Sinon, on continue la boucle vers le modèle suivant...
+      // Si c'est le dernier modèle et qu'il a échoué
+      if (modelName === MODELS_TO_TRY[MODELS_TO_TRY.length - 1]) {
+        return `❌ L'IA ne répond pas. Code erreur : ${error.message}`;
+      }
     }
   }
-  
   return "❌ Erreur inconnue.";
 };
 
-// --- Helpers ---
 export const generateWinnerAnnouncement = async (ticket: any, prizeName: string) => {
-    return `Bravo à ${ticket.purchaser_name || "l'utilisateur"} !`;
+    return `Félicitations à ${ticket.purchaser_name || "l'heureux gagnant"} ! 🎉`;
 };
 
 export const generateMarketingCopy = async (prizeName: string) => {
